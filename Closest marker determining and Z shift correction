@@ -1,0 +1,144 @@
+from pytom.basic.structures import ParticleList, Particle
+import os
+from pytom.basic.datatypes import DATATYPE_MARKER_RESULTS
+from pytom.gui.guiFunctions import loadstar
+import numpy
+
+
+def getClosestMarkerID(markerLocations, particleLocation):
+
+    '''calculate closest reference marker for a given particle cooridinate
+
+    @param markerLocations: x,y,z coordinates of the reference markers
+    @type markerLocations: structured numpy array of datatype DATATAYPE_MARKER_RESULTS
+    @param particleLocation: x,y,z coordinates of given particle coordinates
+    @type particleLocation: numpy array / list
+    @return: closest marker coordinates for particle
+    @rtype: float
+    @author: Kooijman'''
+
+    if len(particleLocation) != 3:
+        raise Exception('Length particleLocation is not 3' )
+
+    if  markerLocations.dtype != numpy.array((5),dtype=DATATYPE_MARKER_RESULTS).dtype:
+        raise TypeError('markerLocations is not structured array of type DATATYPE_MARKER_RESULTS')
+
+    smallestdistance = 1000000
+    closestmarkerindex = -1
+    nmarkers = len(markerLocations['OffsetX'])
+    Xparticlelocation, Yparticlelocation, Zparticlelocation = particleLocation
+    for MarkerIndex in range(nmarkers):
+        distanceclosestmarker = numpy.sqrt( (markerLocations['PositionX'][MarkerIndex] - Xparticlelocation) * 0 +
+                                            (markerLocations['PositionY'][MarkerIndex] - Yparticlelocation) * 0  +
+                                            (markerLocations['PositionZ'][MarkerIndex] - Zparticlelocation) ** 2)
+        if distanceclosestmarker < smallestdistance:
+             smallestdistance = distanceclosestmarker
+             closestmarkerindex = MarkerIndex
+
+    if closestmarkerindex < 0:
+        raise Exception('No marker index found' )
+
+    return closestmarkerindex
+
+def correct_z_height(particle, markerLocations, closest_marker_id, binning=1):
+    ''' Correcting z coordinate by adding calculated offzet to given particle
+
+    @param particle: Particle object
+    @type particle: instance of class Particle from pytom.bsic.structures
+    @param markerLocations: 3d coordinate of experimental determined marker
+    @type markerLocations: numpy.structured array of dtype DATATYPE_MARKER_RESULTS from pytom.basic.datatyoes
+    @param closest_marker_id: index of the closest marker with respect to particle
+    @type closest_marker_id: int
+    @return: Particle with updated / orrected z coordinate
+    @rtype:instance of class Particle from pytom.basic.structures
+    @author: Kooijman'''
+
+
+    p = particle
+    offzetZ = markerLocations['OffsetZ'][closest_marker_id]
+    pp = p.getPickPosition()
+    print(binning, offzetZ)
+    pp.setZ(pp.getZ() - offzetZ/binning) # setting the position towards the adjusted position
+    #p.setFilename(f'{os.path.dirname(p.getFilename())}_REF_{closest_marker_id}/{os.path.basename(p.getFilename())}')
+    return p
+
+
+def correct_directory_particles(particle, closest_marker_id):
+    #not yet needed
+
+    pass
+
+
+if __name__ == '__main__':
+
+    # User set variables
+    fname = '/data2/robert/daan/mito_pfeffer/04_Particle_Picking/Picked_Particles/allPartsFull_DK.xml'
+    refid = 0
+    tomodir = '/data2/robert/daan/mito_pfeffer/03_Tomographic_Reconstruction'
+    marklocfolder = 'alignment/marker_0000_-60.0,60.0/GlobalAlignment/sorted'
+    output_filename = '/data2/robert/daan/mito_pfeffer/04_Particle_Picking/Picked_Particles/allPartsFull_DK_Reconstructed_particlelocations.xml'
+    coordinates_binning = 8
+
+    # Default values
+    splitString0 = 'tomogram_'
+    splitString1 = '_'
+    splitString2 = '_REF_'
+
+    # Start processing
+    ff = os.path.dirname(fname)
+    particle_list = ParticleList()
+    outlist = ParticleList()
+
+    particle_list.fromXMLFile(fname)
+
+    lists = []
+    fnameIndices = {}
+
+    query = '{d[0]}/tomogram_{d[1]:03d}/{d[2]}/markerLocations_irefmark_{d[3]}.txt'
+
+    markerLocations = []
+
+    plNames = sorted([os.path.join(ff, name) for name in os.listdir(ff) if
+                      splitString2 in name and name.endswith('.xml') and not name.endswith('reduced.xml') and not name.endswith('REDUCED.xml')])
+    print(plNames)
+    for i, name in enumerate(plNames):
+        fnameIndices[i] = {}
+        lists.append(ParticleList())
+        lists[-1].fromXMLFile(name)
+        for n, particle in enumerate(lists[-1]):
+            markerLocationFile = query.format(d=[tomodir, n, marklocfolder, refid])
+            markerLocations.append(loadstar(markerLocationFile, dtype=DATATYPE_MARKER_RESULTS))
+            folder = os.path.basename(os.path.dirname(particle.getFilename()))
+            tomogramID = int(folder.split(splitString0)[1].split(splitString1)[0])
+            if not tomogramID in fnameIndices[i].keys():
+                fnameIndices[i][tomogramID] = {}
+            fnameIndices[i][tomogramID][os.path.basename(particle.getFilename())] = n
+
+
+    for k in sorted(fnameIndices[0].keys()):
+        print(k)
+        markerLocationFile = query.format(d=[tomodir, k, marklocfolder, refid])
+        markerLocations.append(loadstar(markerLocationFile, dtype=DATATYPE_MARKER_RESULTS))
+
+    for k in fnameIndices.keys():
+        for k2 in fnameIndices[k].keys():
+            print(k,k2)
+
+    for particle in particle_list:
+        pos = numpy.array(particle.getPickPosition().toVector())*coordinates_binning
+        folder = os.path.basename(os.path.dirname(particle.getFilename()))
+        tomogramID = int(folder.split(splitString0)[1].split(splitString1)[0])
+        closestMarkerID = getClosestMarkerID(markerLocations[tomogramID], pos)
+        print(folder,tomogramID,closestMarkerID)
+        fname = os.path.basename(particle.getFilename())
+
+        new_fname = f'Subtomograms/tomogram_{tomogramID:03d}_dk_full_CM_{closestMarkerID}Local_gold_REF_only_/{fname}'
+        particle.setFilename(new_fname)
+        # Get the ID of the particle from the previously assigned fnameIndices dictionary
+        n = fnameIndices[closestMarkerID][tomogramID][fname]
+        outlist.append(particle)
+
+        if tomogramID == 10:
+            print(outlist[-1].getFilename())
+
+        outlist.toXMLFile(output_filename)
