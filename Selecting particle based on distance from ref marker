@@ -1,0 +1,78 @@
+
+from pytom.basic.structures import ParticleList, Particle
+import os
+from pytom.basic.datatypes import DATATYPE_MARKER_RESULTS
+from pytom.gui.guiFunctions import loadstar
+import numpy
+
+
+def splitAdjustPLClosestMarker(fname_particlelist, fname_markerlocation, coordinates_binning=8,
+                               splitString0='tomogram_', splitString1='_', verbose=False, fixClosestID=None):
+    ''' @param Fname_particlelist: list of to be adjusted particle list
+    @type particle: list / numpy array
+    @param fname_markerlocation: 3d coordinate of experimental determined marker
+    @type fname_markerlocation: numpy.structured array of dtype DATATYPE_MARKER_RESULTS from pytom.basic.datatyoes
+    @param closest_marker_id: index of the closest marker with respect to particle
+    @type closest_marker_id: int
+    @return: list with closest marker and corrected Z height
+    @rtype: list or numpy array
+    @author: Kooijman  '''
+
+    markers = {}  # dictionary list with all particles
+
+    # 1. Read in original particle list
+    particle_list = ParticleList()
+    particle_list.fromXMLFile(fname_particlelist)
+    markerlocationfiles = {}  # create empyt dictionary list
+    outlist = ParticleList()
+    outname_file = '/data2/robert/daan/mito_pfeffer/04_Particle_Picking/Picked_Particles/particle_local_Zbased_75percent_DK_2306.xml'
+    # Setting the marker location folder
+    for particle in particle_list:  # As long as there are particles in the list the for loop continues
+        folder = os.path.basename(os.path.dirname(particle.getFilename()))  # returning the last directory
+        tomogramID = int(folder.split(splitString0)[1].split(splitString1)[0])  # splitsing each tomogram
+        if not tomogramID in markers.keys():  # if a tomogram has not been defined before it will therefore create a list
+            markers[tomogramID] = []
+
+            # list with all marker locations
+            fname_markelocation_txt = fname_markerlocation.format(d=[tomogramID])
+            if verbose: print(fname_markelocation_txt)
+            markerlocationfiles[tomogramID] = loadstar(fname_markelocation_txt, dtype=DATATYPE_MARKER_RESULTS)
+
+            num_markers = len(markerlocationfiles[tomogramID]['MarkerIndex'])
+            for j in range(num_markers):
+                markers[tomogramID].append(ParticleList())
+
+        smallestdistance = 1000000
+
+        nmarkers = len(markerlocationfiles[tomogramID])
+        print(nmarkers)
+        pos = numpy.array(particle.getPickPosition().toVector()) * 8
+        px, py, pz = pos
+
+        for MarkerIndex in range(nmarkers):
+            distanceclosestmarker = numpy.sqrt(
+                (markerlocationfiles[tomogramID]['PositionX'][MarkerIndex] - px) ** 2 * 0 +
+                (markerlocationfiles[tomogramID]['PositionY'][MarkerIndex] - py) ** 2 * 0 +
+                (markerlocationfiles[tomogramID]['PositionZ'][MarkerIndex] - pz) ** 2)
+            if distanceclosestmarker < smallestdistance:
+                smallestdistance = distanceclosestmarker
+        if  smallestdistance < 37.5/0.262:
+            markers[tomogramID].append(particle)
+            outlist.append(particle)
+    # for pl in markers.values():
+    #     for particle in pl:
+    #         outlist.append(particle)
+    # outlist.append(markers)
+    outlist.toXMLFile(outname_file)
+
+
+if __name__ == '__main__':
+    verbose = False
+    projectdir = '/data2/robert/daan/mito_pfeffer'
+    fname_particlelist = '/data2/robert/daan/mito_pfeffer/04_Particle_Picking/Picked_Particles/closest_Z_particles_DK_all_2306.xml'
+    refid = 0
+    # Marker locations in tomogram used for particle picking
+    fname_markerlocation = f'{projectdir}/03_Tomographic_Reconstruction/tomogram_' + '{d[0]:03d}' + f'/alignment/marker_{refid:04d}_-60.0,60.0/GlobalAlignment/sorted/markerLocations_irefmark_{refid}.txt'
+    # folder with alignment results
+
+    Pls = splitAdjustPLClosestMarker(fname_particlelist, fname_markerlocation, verbose=verbose)
