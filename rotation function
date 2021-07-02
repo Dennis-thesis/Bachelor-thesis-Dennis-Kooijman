@@ -1,0 +1,91 @@
+import numpy
+
+def calculate_translation(r_model, r_exp_tilt, psi_ref, psi_itilt, theta_itilt, alignmentMagnification):
+    '''calculate translation between experimentally marker in image i tilt and reference modelpoint in reference image.
+
+    @param r_model: 3d coordinates of reference point (modelded reference point).
+    @type r_model: numpy.array
+    @param r_exp_itilt: 2d coordinate of an experimental determined marker position in image i tilt
+    @type r_exp_itilt: numpy.array
+    @param psi_ref: tilt angle axis in reference image
+    @type psi_ref: float (in radians)
+    @param psi_tilt: tilt axis angle in image i tilt
+    @type psi_itilt: float (in radians)
+    @param theta_itilt: tilt angle of image i tilt
+    @type theta_itilt: float (in radians)
+    @param alignmentMagnification: magnification  of the image itilt.
+    @type alignmentMagnification: vector (ntilt)
+    @return: 2d translation vector. r_exp-r_model_corrected
+    @rtype: float (or array for equationSet==True)
+    @author: Kooijman'''
+
+
+    # Invert rotation z axis.
+    r = create_rotation_z(-psi_ref).dot(r_model)
+
+    # rotate around tilt axis. This is the y axis.
+    r = create_rotation_y(theta_itilt).dot(r)
+
+    # Scaling of vector.
+    r = create_scaling(1/alignmentMagnification).dot(r)
+
+    # rotate around z axis
+    r = create_rotation_z(psi_itilt).dot(r)
+
+    # translation array  2d
+    t = r_exp_tilt-r[:2]
+    return t
+
+def create_rotation_y(theta):
+    ''' calculating the rotation over the y axis in a 3d matrix/coordintation system
+
+    @param theta: tilt angle of imige i
+    @type theta: float (in radians)
+    @return: 3d translation vector of a rotation around the y axis
+    @rtype: float (or array for equationSet==True)
+    '''
+    Rtheta = numpy.identity(3)
+    Rtheta[0,:] = numpy.array([numpy.cos(theta),0,numpy.sin(theta)])
+    Rtheta[1,:] = [0,1,0]
+    Rtheta[2,:] = numpy.array([-numpy.sin(theta),0,numpy.cos(theta)])
+    return Rtheta
+
+def create_scaling(scalingfactor, dim=3):
+    '''  Creating scalingfactor in the vorm of a 2d vector.
+
+       @param scalingfactor: magnification of the image itilt
+       @type scalingfactor: vector (ntilt)
+       @param dim: The dimension(s) of the model to be scaled
+       @return: scaling vector in the dimension(s)
+       @rtype: float (or array for equationSet==True)
+       '''
+    s = numpy.identity(dim) * scalingfactor
+    return s
+
+def create_rotation_z(theta):
+    '''  Rotation over the z axis in a 3d matrix/coordintation system
+
+        @param theta: tilt angle of imige i
+        @type theta: numpy.array
+        @return: 2d translation vector of a rotation around the z axis
+        @rtype: float (or array for equationSet==True)
+        '''
+    Rtheta = numpy.identity(3)
+    Rtheta[0, :] = numpy.array([numpy.cos(theta), -numpy.sin(theta),0])
+    Rtheta[1, :] = numpy.array([numpy.sin(theta), numpy.cos(theta),0])
+    Rtheta[2, :] = [0,0,1]
+    return Rtheta
+
+def create_rotation_x(theta):
+    '''  Rotation over the x axis in a 3d model/coordintation system
+
+        @param theta: tilt angle of imige i
+        @type thetal: numpy.array
+        @return: 2d translation vector of a rotation around the x axis
+        @rtype: float (or array for equationSet==True)
+        '''
+    Rtheta = numpy.identity(3)
+    Rtheta[0, :] = [1,0,0]
+    Rtheta[1. :] = numpy.array([0,numpy.cos(theta), -numpy.sin(theta)])
+    Rtheta[2, :] = numpy.array([0,numpy.sin(theta), numpy.cos(theta)])
+    return Rtheta
