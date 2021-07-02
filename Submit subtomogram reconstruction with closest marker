@@ -1,0 +1,180 @@
+from pytom.basic.structures import ParticleList, Particle
+import os
+from pytom.basic.datatypes import DATATYPE_MARKER_RESULTS
+from pytom.gui.guiFunctions import loadstar
+import numpy
+from pytom.scripts.Generate_Closest_marker_list import getClosestMarkerID
+from pytom.scripts.Generate_Closest_marker_list import correct_z_height
+
+def splitAdjustPLClosestMarker(fname_particlelist, fname_markerlocation, coordinates_binning = 8, suffix="" ,
+                               splitString0='tomogram_', splitString1='_', verbose=False, fixClosestID=None):
+
+    ''' @param Fname_particlelist: list of to be adjusted particle list
+    @type particle: list / numpy array
+    @param fname_markerlocation: 3d coordinate of experimental determined marker
+    @type fname_markerlocation: numpy.structured array of dtype DATATYPE_MARKER_RESULTS from pytom.basic.datatyoes
+    @param closest_marker_id: index of the closest marker with respect to particle
+    @type closest_marker_id: int
+    @return: list with closest marker and corrected Z height
+    @rtype: list or numpy array
+    @author: Kooijman  '''
+
+    markers = {}  #  dictionary list with all particles
+
+    # 1. Read in original particle list
+    particle_list = ParticleList()
+    particle_list.fromXMLFile(fname_particlelist)
+    markerlocationfiles = {} #create empyt dictionary list
+
+
+    # Setting the marker location folder
+    for particle in particle_list: # As long as there are particles in the list the for loop continues
+        folder = os.path.basename(os.path.dirname(particle.getFilename())) #returning the last directory
+        tomogramID = int(folder.split(splitString0)[1].split(splitString1)[0]) #splitsing each tomogram
+        if not tomogramID in markers.keys(): # if a tomogram has not been defined before it will therefore create a list
+            markers[tomogramID] = []
+
+
+            # list with all marker locations
+            fname_markelocation_txt = fname_markerlocation.format(d=[tomogramID])
+            if verbose: print(fname_markelocation_txt)
+            markerlocationfiles[tomogramID] = loadstar(fname_markelocation_txt, dtype=DATATYPE_MARKER_RESULTS)
+
+
+            num_markers = len(markerlocationfiles[tomogramID]['MarkerIndex'])
+            for j in range(num_markers):
+                markers[tomogramID].append(ParticleList())
+
+
+        # find closest marker
+        pos = numpy.array(particle.getPickPosition().toVector()) * coordinates_binning
+
+        if fixClosestID is None: closestMarkerID, euclideanDistance = getClosestMarkerID(markerlocationfiles[tomogramID], pos)
+        else: closestMarkerID = fixClosestID
+
+
+        if verbose: print(f'closestMarkerID for {particle.getFilename()}: {closestMarkerID}')
+
+
+        # correct z-height
+
+        if len(markerlocationfiles[tomogramID]['MarkerIndex']) <= closestMarkerID: continue
+        if verbose: print(particle)
+        pz =  correct_z_height(particle, markerlocationfiles[tomogramID], closestMarkerID, binning=coordinates_binning)
+        pz.getPickPosition().setRefMarkerIndex(closestMarkerID)
+        pz.getPickPosition().setBinningFactor(coordinates_binning)
+
+        folder, fname = os.path.dirname(pz.getFilename()), os.path.basename(pz.getFilename())
+        newname = f'{folder}_CM_{closestMarkerID}{suffix}/{fname}'
+        pz.setFilename(newname)
+        if verbose: print(pz)
+        #append to correct particle list
+        markers[tomogramID][closestMarkerID].append(pz)
+
+    return  markers # returns a list of the closest and z corrected markerlocations
+
+
+
+def create_jobfile(particlelist, tomogramID, markerpath, metafile, jobname, submit=False, index=0):
+    ''' Creating a jobfile to submit a subtomogram reconstruction
+
+    @param particlelist: list of particles to be extracted
+    @type particlelist: list / numpy array
+    @param tomogramID: number of tomogram
+    @type tomogramID: float
+    @param markerpath: directory of the markerfiles
+    @type markerpath: string
+    @param metafile: directory of the metafile to be used
+    @type metafile: string
+    @param jobname: Assigned name for the created jobfile
+    @type jobname: string
+    @author: Kooijman'''
+
+    jobstring = '''#!/usr/bin/bash
+#SBATCH --time        48:00:00
+#SBATCH -N 1
+#SBATCH --partition defq
+#SBATCH --ntasks-per-node 20
+#SBATCH --job-name    SubtomoRecon_{d[4]}                                                                       
+#SBATCH --output      /data2/robert/daan/mito_pfeffer/LogFiles/%j-%x.out 
+#SBATCH --dependency=singleton
+
+
+module load lib64/append openmpi/2.1.1 python3/3.7 
+
+cd /data2/robert/daan/mito_pfeffer/05_Subtomogram_Analysis
+
+reconstructWB.py --particleList {d[0]} \
+--projectionDirectory /data2/robert/daan/mito_pfeffer/03_Tomographic_Reconstruction/tomogram_{d[1]:03d}/alignment/{d[2]} \
+--coordinateBinning 8 \
+--size 200 \
+--applyWeighting -1 \
+--projBinning 1 \
+--recOffset 0,0,0 \
+--metafile {d[3]} \
+--numProcesses 20 \
+
+'''
+    out = open(jobname, 'w')
+    out.write(jobstring.format(d=[particlelist, tomogramID, markerpath, metafile, index]))
+    out.close()
+
+    if submit:
+        import os
+        os.system(f'sbatch {jobname}')
+
+
+
+
+
+
+if __name__ == '__main__':
+    verbose=False
+    num_jobs = 2
+    projectdir = '/data2/robert/daan/mito_pfeffer'
+    refid=0
+    index = 1
+
+    fname_particlelist = '/data2/robert/daan/mito_pfeffer/04_Particle_Picking/Picked_Particles/allPartsFull_DK.xml'
+    # Marker locations in tomogram used for particle picking
+    fname_markerlocation = f'{projectdir}/03_Tomographic_Reconstruction/tomogram_'+'{d[0]:03d}'+f'/alignment/marker_{refid:04d}_-60.0,60.0/GlobalAlignment/sorted/markerLocations_irefmark_{refid}.txt'
+    # folder with alignment results
+    alignmentdir = f'LocalMarkerRefinement/sorted_ctf'
+
+    suffix = f'Local_gold_REF_only_'
+    savedir = f'{projectdir}/05_Subtomogram_Analysis/Reconstruction'
+
+
+    fixedclosestmarker = 3
+
+    Pls = splitAdjustPLClosestMarker(fname_particlelist, fname_markerlocation, suffix=suffix,  verbose=verbose, fixClosestID=fixedclosestmarker
+                                     )
+
+    for tomogramID in Pls.keys():
+        for closestMarkerID, pl in enumerate(Pls[tomogramID]):
+            if len(pl) < 1: continue
+            # write particlelist
+            pname = f'{savedir}/particleList_tomogram_{tomogramID:03d}_CM_{suffix}{closestMarkerID}.xml'
+            pl.toXMLFile(pname)
+
+            # Set submission script parameters
+            folder = f'{projectdir}/03_Tomographic_Reconstruction/tomogram_{tomogramID:03d}/sorted/'
+            mf_list = [os.path.join(folder, m) for m in os.listdir(folder) if m.endswith('.meta')]
+            if len(mf_list) == 0:
+                print(f'For tomogram_{tomogramID:03d} no job submitted for closest marker {closestMarkerID}, because of absence of meta file in sorted dir.' )
+                continue
+            mf = mf_list[0]
+
+            if tomogramID ==4:
+                markerfile = f'marker_{closestMarkerID:04d}_-58.0,60.0/{alignmentdir}'
+            else:
+                markerfile = f'marker_{closestMarkerID:04d}_-60.0,60.0/{alignmentdir}'
+
+            jobname = f'{savedir}/extractSubTomogram_tomogram_{tomogramID:03d}_CM_{closestMarkerID}{suffix}.sh'
+
+            # Create submission script
+            create_jobfile(pname, tomogramID, markerfile, metafile=mf, jobname=jobname, submit=True, index=index%num_jobs)
+
+            index += 1
+
+
