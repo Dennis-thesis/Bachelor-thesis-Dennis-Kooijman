@@ -1,0 +1,59 @@
+import unittest
+import numpy
+class test_RotationF(unittest.TestCase):
+
+    def test_standard(self):
+        '''Testing without changing parameters supposed to give (0,0)'''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([0, 0, 0]), numpy.array([0, 0]), 0, 0, 0, 1)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6, msg="X is not zero")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg="Y is not zero")
+
+    def test_Rotating_90degrees_y_axis(self):
+        '''Testing rotation 90 degrees around y axis supposed to give (0,0)'''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([1, 0, 0]), numpy.array([0, 0]), 0, 0, numpy.pi*90/180, 1)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6,msg="tx is not zero")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg="ty is not zero")
+
+    def test_invert_rotation_followed_by_rotation_(self):
+        ''' Testing invert rotating z axis followed by rotating z  axis (same angle) expecting the starting vector (inverted rotation followed by rotation same angle results in no angle rotation overall)'''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([4, 2, 0]), numpy.array([4, 2]), numpy.pi/13, numpy.pi/13, 0, 1)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6, msg="M is not zero")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg="N is not zero")
+
+
+    def test_r_exp_itilt_is_r_model(self):
+        '''Testing  with same r_exp_itilt as r_model expecting to give (0,0)'''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([1, 1, 0]), numpy.array([1, 1]), 0, 0, 0, 1)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6, msg="A is not zero")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg="B is not zero")
+
+
+    def test_Rotation_Z(self):
+        '''Testing rotation 90 degrees on z axis expecting x axis to become z axis resulting to give (0,0) '''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([1, 0, 0]), numpy.array([0,1]), 0,numpy.pi*90/180, 0, 1)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6, msg=f"C is not zero {c[0]}")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg=f"D is not zero {c[1]}")
+
+    def test_Invert_rotation_Z_axis(self):
+        '''Test invert rotation z axis epecting y axis to become x axis resulting to give (0,0)'''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([0, 1, 0]), numpy.array([1, 0]), numpy.pi * 90 / 180, 0, 0, 1)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6, msg="E is not zero")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg="F is not zero")
+
+    def test_scaling(self):
+        '''Testing the scaling expecting the r_model to be halved and thus expecting to give (0,0)'''
+        from Rotation_function import calculate_translation
+        c = calculate_translation(numpy.array([4, 2, 0]), numpy.array([2, 1]), numpy.pi / 13, numpy.pi / 13, 0, 2)
+        self.assertTrue(numpy.abs(c[0]) < 1E-6, msg="M is not zero")
+        self.assertTrue(numpy.abs(c[1]) < 1E-6, msg="N is not zero")
+
+
+
+if __name__ == '__main__':
+    unittest.main()
